@@ -1,6 +1,6 @@
 /* Salt Whisperer service worker: precache the app shell and food photos so it works offline.
    Bump CACHE_VERSION whenever any cached file changes. */
-const CACHE_VERSION = "salt-whisperer-preview-replay-v1";
+const CACHE_VERSION = "salt-whisperer-preview-replay-v2";
 const ASSETS = [
   "./",
   "./index.html",

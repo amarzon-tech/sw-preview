@@ -347,7 +347,7 @@ function renderHome(){
             el("small", { text: nMiss === 0 ? "No misses to practice" : nMiss === 1 ? "1 card to review" : nMiss + " cards to review" }))));
     })(),
     el("div", { class:"modeGrid" },
-      modeBtn("journeyBtn", "👆", unlocked > 1 ? `Journey: Level ${unlocked}` : "Swipe Journey", LEVELS[unlocked - 1].theme, () => { startJourney(unlocked); }),
+      modeBtn("journeyBtn", "👆", unlocked > 1 ? `Journey: Level ${unlocked}` : "Let's play! 🧂", LEVELS[unlocked - 1].theme, () => { startJourney(unlocked); }),
       modeBtn("speedBtn", "⚡", "Speed Round", "60 seconds, big combos", startSpeed),
       modeBtn("hiddenBtn", "🕵️", "Hidden Salt", "Find the saltiest item", startHidden),
       modeBtn("guessBtn", "🎯", "Guess the Shaker", "Guess the milligrams", startGuess),

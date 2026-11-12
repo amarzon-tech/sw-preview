@@ -8,7 +8,7 @@ This branch is based on `v2-game` (f172664). No sodium values, categories, teach
 
 ## Home screen (additions)
 
-Daily Budget and the six existing mode buttons are unchanged. Added:
+The Journey start button for new players now says “Let's play! 🧂” instead of “Swipe Journey”. Returning players still see “Journey: Level {n}”. Daily Budget and the other five mode buttons are unchanged. Added:
 
 - “Daily Challenge”
 - “Daily Challenge done ({score}/10)”
