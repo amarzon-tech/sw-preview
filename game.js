@@ -56,10 +56,12 @@ function newProfileData(){
   return { xp:0, unlocked:1, best:{}, journeys:0,
     stats:{ answered:0, correct:0, rounds:0, perfect:0, maxCombo:0, bullseyes:0, dailyPlayed:0 },
     daily:{ last:null, streak:0, best:0, freezes:1, lastTotal:null, lastTarget:null, under:0, lastUnder:null, history:[] },
-    records:{}, badges:{} };
+    records:{}, badges:{},
+    misses:[], seenFoods:[], seenPlates:[], seenCompares:[], deckCycle:0,
+    challenge:{ date:null, score:null, best:null, completed:false } };
 }
 function defaultSave(){ return { v:2, profile:null, htnLimit:1500, settings:{ sound:true, haptics:true }, p:{ ckd:newProfileData(), htn:newProfileData() } }; }
-function mergeP(d, s){ return { ...d, ...s, stats:{...d.stats, ...(s&&s.stats)}, daily:{...d.daily, ...(s&&s.daily)}, best:{...(s&&s.best)}, records:{...(s&&s.records)}, badges:{...(s&&s.badges)} }; }
+function mergeP(d, s){ return { ...d, ...s, stats:{...d.stats, ...(s&&s.stats)}, daily:{...d.daily, ...(s&&s.daily)}, best:{...(s&&s.best)}, records:{...(s&&s.records)}, badges:{...(s&&s.badges)}, misses:(s&&s.misses)||d.misses, seenFoods:(s&&s.seenFoods)||d.seenFoods, seenPlates:(s&&s.seenPlates)||d.seenPlates, seenCompares:(s&&s.seenCompares)||d.seenCompares, challenge:{...d.challenge, ...(s&&s.challenge)} }; }
 function loadSave(){
   try{
     const s = JSON.parse(localStorage.getItem(STORE_KEY) || "null"), d = defaultSave();
@@ -99,6 +101,48 @@ const fmt = (n) => Number(n).toLocaleString("en-US");
 const mgText = (mg) => mg === 0 ? "0 mg" : "~" + fmt(mg) + " mg";
 const reduceMotion = !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
 const emojiImg = (emoji, label, cls) => el("div", { class:cls, role:"img", "aria-label":label, text:emoji });
+function imgPath(item){
+  if (!item) return "";
+  if (item.type === "plate") return "images/plate-" + item.id + ".webp";
+  return "images/food-" + item.id + ".webp";
+}
+function foodPhoto(item, cls, alt){
+  const src = typeof item === "string" ? item : imgPath(item);
+  const name = alt || (item && item.name) || "";
+  return el("img", { class:"foodPhoto" + (cls ? " " + cls : ""), src, alt:name, loading:"lazy", decoding:"async" });
+}
+function sidePhoto(side, cls){
+  return el("img", { class:"foodPhoto" + (cls ? " " + cls : ""), src:"images/food-" + side.ref + ".webp", alt:side.name, loading:"lazy", decoding:"async" });
+}
+function hashStr(s){
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function seenKey(c){ return c.type === "plate" ? "seenPlates" : c.type === "compare" ? "seenCompares" : "seenFoods"; }
+function markSeen(c){
+  const p = PD(), k = seenKey(c);
+  p[k] = p[k] || [];
+  const i = p[k].indexOf(c.id);
+  if (i >= 0) p[k].splice(i, 1);
+  p[k].push(c.id);
+}
+function rotateArr(arr, k){
+  if (!arr.length) return arr.slice();
+  const n = ((k % arr.length) + arr.length) % arr.length;
+  return arr.slice(n).concat(arr.slice(0, n));
+}
+function recordMissAnswer(c, ok){
+  if (!c || !c.id) return;
+  const p = PD();
+  p.misses = p.misses || [];
+  p.misses = p.misses.filter(m => !(m.type === c.type && m.id === c.id));
+  if (!ok) p.misses.unshift({ type:c.type, id:c.id, at:Date.now() });
+  p.misses = p.misses.slice(0, 50);
+}
+function todayLabel(d){
+  return (d || new Date()).toLocaleDateString("en-US", { weekday:"long", month:"long", day:"numeric" });
+}
 function tspText(mg){
   const t = mg / TSP_MG;
   if (t < 0.06) return "a few grains of salt";
@@ -289,6 +333,19 @@ function renderHome(){
       el("span", { class:"me", "aria-hidden":"true", text:"📅" }),
       el("span", {}, ds.doneToday ? `Daily Budget done (${fmt(p.daily.lastTotal)} mg)` : "Daily Budget",
         el("small", { text: ds.doneToday ? "Replay for practice. Come back tomorrow for a new day." : ds.freezeNeeded ? "A streak freeze is ready to cover yesterday." : `Pick 4 meals under ${fmt(TARGET())} mg. About 2 minutes.` }))),
+    (function(){
+      const ch = p.challenge || {}, doneCh = ch.date === dstr() && ch.completed;
+      const nMiss = (p.misses || []).length;
+      return el("div", { class:"modeRow" },
+        el("button", { class:"challengeBtn", id:"challengeBtn", onclick:startChallenge },
+          el("span", { class:"me", "aria-hidden":"true", text:"☀️" }),
+          el("span", {}, doneCh ? `Daily Challenge done (${ch.score}/10)` : "Daily Challenge",
+            el("small", { text: doneCh ? "Replay for practice. Come back tomorrow for a new set." : "Today's 10 cards · " + todayLabel() }))),
+        el("button", { class:"practiceBtn", id:"practiceBtn", onclick:startPractice, disabled:nMiss === 0 },
+          el("span", { class:"me", "aria-hidden":"true", text:"🔁" }),
+          el("span", {}, "Practice the ones you missed",
+            el("small", { text: nMiss === 0 ? "No misses to practice" : nMiss === 1 ? "1 card to review" : nMiss + " cards to review" }))));
+    })(),
     el("div", { class:"modeGrid" },
       modeBtn("journeyBtn", "👆", unlocked > 1 ? `Journey: Level ${unlocked}` : "Swipe Journey", LEVELS[unlocked - 1].theme, () => { startJourney(unlocked); }),
       modeBtn("speedBtn", "⚡", "Speed Round", "60 seconds, big combos", startSpeed),
@@ -386,7 +443,7 @@ function renderStats(){
         stat("🔥 " + dailyStatus().streak, "Daily streak"), stat(p.daily.best, "Best daily streak"),
         stat("❄️ " + p.daily.freezes, "Streak freezes"), stat("x" + mult(s.maxCombo), "Best combo (" + s.maxCombo + ")")),
       el("h3", { text:"Personal bests (points)" }),
-      rec("budget", "📅 Daily Budget (best score)"), rec("journey", "👆 Journey"), rec("speed", "⚡ Speed Round"), rec("hidden", "🕵️ Hidden Salt"), rec("guess", "🎯 Guess the Shaker"), rec("compare", "⚖️ Which is lower?"),
+      rec("budget", "📅 Daily Budget (best score)"), rec("challenge", "☀️ Daily Challenge (best points)"), rec("journey", "👆 Journey"), rec("speed", "⚡ Speed Round"), rec("hidden", "🕵️ Hidden Salt"), rec("guess", "🎯 Guess the Shaker"), rec("compare", "⚖️ Which is lower?"),
       el("h3", { text:"Journey best per level" }),
       ...LEVELS.map((Lv, i) => el("div", { class:"levelRow" }, el("span", { text:`${Lv.emoji} ${i+1}. ${Lv.theme}` }),
         el("b", { text: (i+1) > p.unlocked ? "🔒 locked" : (p.best[i+1] != null ? p.best[i+1] + "/10" : "not played") }))),
@@ -446,8 +503,19 @@ function endRound(o){
 let round = [], idx = 0, state = "idle", teardownCard = null, speedTimer = null, advanceTimer = null;
 const stackEl = $("stack"), toastEl = $("toast"), liveEl = $("live");
 function pickFrom(pool, n, seen){
-  const fresh = shuffle(pool.filter(c => !seen.has(c.id))), used = shuffle(pool.filter(c => seen.has(c.id)));
-  const out = [...fresh, ...used].slice(0, n); out.forEach(c => seen.add(c.id)); return out;
+  const p = PD(), cycle = p.deckCycle || 0;
+  const persisted = (c) => (PD()[seenKey(c)] || []).includes(c.id);
+  const persistIdx = (c) => { const arr = PD()[seenKey(c)] || []; const i = arr.indexOf(c.id); return i < 0 ? 9999 : i; };
+  const fresh = rotateArr(pool.filter(c => !seen.has(c.id) && !persisted(c)), cycle);
+  const used = pool.filter(c => !seen.has(c.id) && persisted(c)).sort((a, b) => persistIdx(a) - persistIdx(b));
+  let out = [...fresh, ...used];
+  if (out.length < n){
+    const extra = rotateArr(pool.filter(c => !out.some(x => x.id === c.id)), cycle);
+    out = out.concat(extra);
+  }
+  out = out.slice(0, n);
+  out.forEach(c => { seen.add(c.id); markSeen(c); });
+  return out;
 }
 const sessionSeen = new Set();
 function buildJourney(lv){
@@ -462,7 +530,11 @@ function buildJourney(lv){
 }
 function startJourney(lv){
   newRound("journey", { level:lv, total:PER_ROUND });
-  if (lv === 1) sessionSeen.clear();
+  if (lv === 1){
+    sessionSeen.clear();
+    const p = PD();
+    if ((p.journeys || 0) > 0){ p.deckCycle = (p.deckCycle || 0) + 1; persist(); }
+  }
   round = buildJourney(lv); idx = 0;
   show("gameScreen", { theme:lv });
   $("subtitle").textContent = `Level ${lv}: ${LEVELS[lv-1].theme}`;
@@ -470,14 +542,18 @@ function startJourney(lv){
 }
 function startCompare(){
   newRound("compare", { total:PER_ROUND });
-  round = shuffle(COMPARES).slice(0, PER_ROUND); idx = 0;
+  round = pickFrom(COMPARES, Math.min(PER_ROUND, COMPARES.length), new Set()); idx = 0;
   show("gameScreen", { theme:4 }); $("subtitle").textContent = "Which is lower in sodium?";
   renderCard();
 }
 function buildSpeed(){
-  const rng = Math.random;
-  const pool = shuffle([...FOODS, ...FOODS, ...PLATES], rng);
-  return pool.slice(0, 80);
+  const p = PD();
+  const seenF = new Set(p.seenFoods || []), seenP = new Set(p.seenPlates || []);
+  const foodsFresh = shuffle(FOODS.filter(c => !seenF.has(c.id)));
+  const foodsUsed = shuffle(FOODS.filter(c => seenF.has(c.id)));
+  const platesFresh = shuffle(PLATES.filter(c => !seenP.has(c.id)));
+  const platesUsed = shuffle(PLATES.filter(c => seenP.has(c.id)));
+  return shuffle([...foodsFresh, ...platesFresh, ...foodsUsed, ...platesUsed, ...FOODS]).slice(0, 80);
 }
 function startSpeed(){
   newRound("speed", { total:0, endAt:0, done:false });
@@ -532,17 +608,18 @@ function renderCard(){
   const card = el("article", { class:"card", "aria-label": isCmp ? "Which is lower in sodium?" : `${c.name}${c.serving ? ", " + c.serving : ""}` });
   if (isCmp) card.append(el("div", { class:"overlay left", "aria-hidden":"true", text:"A" }), el("div", { class:"overlay right", "aria-hidden":"true", text:"B" }));
   else card.append(el("div", { class:"overlay left", "aria-hidden":"true", text:"HIGH" }), el("div", { class:"overlay up", "aria-hidden":"true", text:"MODERATE" }), el("div", { class:"overlay right", "aria-hidden":"true", text:"LOW" }));
-  const label = R.mode === "speed" ? "Speed" : R.mode === "compare" ? "Compare" : `Level ${R.level}`;
+  const total = R.total || PER_ROUND;
+  const label = R.mode === "speed" ? "Speed" : R.mode === "compare" ? "Compare" : R.mode === "challenge" ? "Daily Challenge" : R.mode === "practice" ? "Practice" : `Level ${R.level}`;
   card.append(el("div", { class:"badgeRow" },
-    el("div", { class:"pill", text: R.mode === "speed" ? "Speed Round" : `${label} · Card ${idx+1}/${PER_ROUND}` }),
+    el("div", { class:"pill", text: R.mode === "speed" ? "Speed Round" : `${label} · Card ${idx+1}/${total}` }),
     el("div", { class:"pill pill2", text: c.type === "plate" ? "Plate" : isCmp ? "Which is lower?" : (CONTENT.cats[c.cat] || ["Food"])[0] })));
   const content = el("div", { class:"content" });
   if (isCmp){
     content.append(el("div", { class:"name", text:"Which is lower in sodium?" }));
-    const mk = (o, L) => el("div", { class:"opt", "data-opt":L }, el("div", { class:"letter", text:L.toUpperCase() }), emojiImg(o.emoji, o.name, "e"), el("div", { class:"n", text:o.name }), el("div", { class:"s", text:o.serving }));
+    const mk = (o, L) => el("div", { class:"opt", "data-opt":L }, el("div", { class:"letter", text:L.toUpperCase() }), sidePhoto(o, "cmp"), el("div", { class:"n", text:o.name }), el("div", { class:"s", text:o.serving }));
     content.append(el("div", { class:"compare" }, mk(c.a, "a"), mk(c.b, "b")));
   } else {
-    content.append(emojiImg(c.emoji, c.name, "emojiTile"), el("div", { class:"name", text:c.name }));
+    content.append(foodPhoto(c), el("div", { class:"name", text:c.name }));
     if (c.serving) content.append(el("div", { class:"serving", text:"Serving: " + c.serving }));
     content.append(el("div", { class:"prompt", text: c.type === "plate" ? "Is this whole plate high, moderate or low in sodium? (Low is under 600 mg.)" : "Is one serving high, moderate or low in sodium? (Low is 140 mg or less.)" }));
     if (c.type === "plate") content.append(el("div", { class:"mealList" }, c.parts.map(p => el("div", { class:"mealItem" }, el("span", { text:p.t }), el("span", { class:"tag", hidden:true, text:"" })))));
@@ -567,6 +644,7 @@ function answer(choice){
   const cardEl = stackEl.querySelector(".card");
   if (R.mode === "speed") R.answered = (R.answered || 0) + 1;
   if (ok){ gotRight(10, cardEl); if (c.id === "cmp-salt") award("subspot"); } else gotWrong(cardEl);
+  recordMissAnswer(c, ok); markSeen(c);
   R.grid.push(ok ? "🟩" : "🟥");
   persist(); hudUpdate();
   [$("highBtn"), $("modBtn"), $("lowBtn")].forEach(b => b.disabled = true);
@@ -614,7 +692,7 @@ function nextCard(){
   state = "idle"; clearTimeout(advanceTimer);
   idx++;
   if (R.mode === "speed"){ if (!R.done) renderCard(); return; }
-  if (idx >= PER_ROUND){ if (teardownCard){ teardownCard(); teardownCard = null; } setProgress(PER_ROUND, PER_ROUND); R.mode === "journey" ? endJourneyLevel() : endCompare(); }
+  if (idx >= (R.total || PER_ROUND)){ if (teardownCard){ teardownCard(); teardownCard = null; } setProgress(R.total || PER_ROUND, R.total || PER_ROUND); if (R.mode === "journey") endJourneyLevel(); else if (R.mode === "compare") endCompare(); else if (R.mode === "challenge") endChallenge(); else if (R.mode === "practice") endPractice(); }
   else renderCard();
 }
 function endJourneyLevel(){
@@ -692,7 +770,7 @@ const rateText = (c) => `${RATE_LABEL[c.rate]} · ${mgText(c.mg)} · ${pct(c.mg)
 /* ---------- HIDDEN SALT ---------- */
 function startHidden(){
   newRound("hidden", { total:6 });
-  round = shuffle(HIDDEN_POOL).slice(0, 6); idx = 0;
+  round = pickFrom(HIDDEN_POOL, Math.min(6, HIDDEN_POOL.length), new Set()); idx = 0;
   renderHidden();
 }
 function renderHidden(){
@@ -705,7 +783,7 @@ function renderHidden(){
     el("span", { class:"pbar" }, el("i")), el("span", { class:"pmg" })));
   const card = el("article", { class:"flatCard", id:"hiddenCard", "aria-label":c.name },
     el("div", { class:"badgeRow" }, el("div", { class:"pill", text:`Plate ${idx + 1}/6` }), el("div", { class:"pill pill2", text:"Hidden Salt" })),
-    el("div", { class:"content" }, emojiImg(c.emoji, c.name, "emojiTile"), el("div", { class:"name", text:c.name }),
+    el("div", { class:"content" }, foodPhoto(c), el("div", { class:"name", text:c.name }),
       el("div", { class:"prompt", id:"hiddenPrompt", text:"Which item on this plate adds the MOST sodium? Tap it." })),
     el("div", { class:"mealList", style:"gap:.45rem" }, buttons));
   $("modeBox").replaceChildren(card);
@@ -714,6 +792,7 @@ function renderHidden(){
     const ok = i === topI;
     const st = PD().stats; st.answered++; if (ok) st.correct++;
     if (ok) gotRight(20, buttons[i]); else gotWrong(buttons[i]);
+    recordMissAnswer(c, ok); markSeen(c);
     R.grid.push(ok ? "🟩" : "🟥");
     buttons.forEach((b, j) => {
       const p = c.parts[j]; b.disabled = true;
@@ -736,7 +815,8 @@ function endHidden(){
 /* ---------- GUESS THE SHAKER ---------- */
 function startGuess(){
   newRound("guess", { total:8 });
-  const lows = shuffle(FOODS.filter(f => f.rate === "low")).slice(0, 2), mods = shuffle(FOODS.filter(f => f.rate === "mod")).slice(0, 3), highs = shuffle(FOODS.filter(f => f.rate === "high")).slice(0, 3);
+  const pickBand = (rate, n) => pickFrom(FOODS.filter(f => f.rate === rate), n, new Set());
+  const lows = pickBand("low", 2), mods = pickBand("mod", 3), highs = pickBand("high", 3);
   round = shuffle([...lows, ...mods, ...highs]); idx = 0;
   renderGuess();
 }
@@ -753,7 +833,7 @@ function renderGuess(){
   const reveal = el("div", { id:"gReveal" });
   const card = el("article", { class:"flatCard", id:"guessCard", "aria-label":c.name },
     el("div", { class:"badgeRow" }, el("div", { class:"pill", text:`Card ${idx + 1}/8` }), el("div", { class:"pill pill2", text:(CONTENT.cats[c.cat] || ["Food"])[0] })),
-    el("div", { class:"content" }, emojiImg(c.emoji, c.name, "emojiTile"), el("div", { class:"name", text:c.name }),
+    el("div", { class:"content" }, foodPhoto(c), el("div", { class:"name", text:c.name }),
       el("div", { class:"serving", text:"Serving: " + c.serving }),
       el("div", { class:"prompt", text:"Slide to guess the sodium in this serving. Bullseye = within 15% (or 25 mg)." })),
     el("div", { class:"sliderBox" }, gBig, gSub, slider), reveal);
@@ -765,6 +845,7 @@ function renderGuess(){
     const st = PD().stats; st.answered++; if (ok) st.correct++;
     let pts = 0;
     if (ok){ pts = gotRight(bull ? 30 : 10, card, bull ? "🎯" : ""); } else gotWrong(card);
+    recordMissAnswer(c, ok); markSeen(c);
     if (bull){ R.bullseyes++; st.bullseyes++; if (R.bullseyes >= 3) award("sniper"); }
     R.grid.push(bull ? "🎯" : band ? "🟩" : "🟥");
     slider.disabled = true; lock.hidden = true; card.classList.add(ok ? "glowGood" : "glowBad");
@@ -825,7 +906,7 @@ function renderBudget(){
   const setTxt = (mg) => { tot.textContent = `${fmt(mg)} mg (${pct(mg)}%)`; left.textContent = mg <= t ? `${fmt(t - mg)} mg left` : `${fmt(mg - t)} mg over`; };
   setTxt(R.totalMg);
   const opts = sl.options.map((o, i) => el("button", { class:"optCard", id:"opt" + i, "data-i":i, onclick:() => choose(i) },
-    el("span", { class:"oe", "aria-hidden":"true", text:o.emoji }),
+    foodPhoto(o, "sm", o.name),
     el("span", {}, o.name, el("small", { text: o.type === "plate" ? o.parts.map(p => p.t).join(", ") : o.serving })),
     el("span", { class:"omg" })));
   $("modeBox").replaceChildren(
@@ -931,8 +1012,75 @@ document.addEventListener("keydown", (e) => {
   }
 });
 window.addEventListener("error", (e) => { window.__errors = (window.__errors || []).concat(String(e.message)); });
+function buildDailyRound(dateStr){
+  const rnd = mulberry32(hashStr("salt-whisperer-v2-daily-v1:" + dateStr));
+  const foods = shuffle(FOODS, rnd).slice(0, 6);
+  const smart = shuffle(PLATES.filter(p => p.smart), rnd);
+  const other = shuffle(PLATES.filter(p => !p.smart), rnd);
+  const plates = [smart[0], other[0]].filter(Boolean);
+  while (plates.length < 2 && other[plates.length]) plates.push(other[plates.length]);
+  const compares = shuffle(COMPARES, rnd).slice(0, 2);
+  return shuffle([...foods, ...plates, ...compares], rnd);
+}
+function startChallenge(){
+  const today = dstr();
+  newRound("challenge", { total:PER_ROUND, today });
+  round = buildDailyRound(today); idx = 0;
+  show("gameScreen", { theme:5 });
+  $("subtitle").textContent = "Daily Challenge · " + todayLabel();
+  renderCard();
+}
+function endChallenge(){
+  const p = PD(), today = dstr();
+  p.challenge = p.challenge || { date:null, score:null, best:null, completed:false };
+  const first = p.challenge.date !== today;
+  if (first){ p.challenge = { date:today, score:R.correct, best:Math.max(p.challenge.best || 0, R.correct), completed:true }; }
+  else { p.challenge.best = Math.max(p.challenge.best || 0, R.correct); }
+  persist();
+  const best = p.challenge.best;
+  endRound({ title:"Daily Challenge complete", recordKey:"challenge", shareTitle:"Daily Challenge ☀️",
+    lines: first
+      ? ["Today's score: " + R.correct + "/" + PER_ROUND, "Best daily: " + best + "/" + PER_ROUND + ". Come back tomorrow for a new set."]
+      : ["Score: " + R.correct + "/" + PER_ROUND, "Best daily: " + best + "/" + PER_ROUND + ". Replays don't change today's first score. Come back tomorrow for a new set."],
+    againText:"Back to menu", again:renderHome });
+}
+function resolveMiss(m){
+  const pool = m.type === "plate" ? PLATES : m.type === "compare" ? COMPARES : FOODS;
+  return pool.find(x => x.id === m.id);
+}
+function startPractice(){
+  const cards = (PD().misses || []).map(resolveMiss).filter(Boolean).slice(0, 10);
+  if (!cards.length){ renderHome(); return; }
+  newRound("practice", { total:cards.length });
+  round = cards; idx = 0;
+  show("gameScreen", { theme:2 });
+  $("subtitle").textContent = "Practice the ones you missed";
+  renderCard();
+}
+function endPractice(){
+  const left = (PD().misses || []).length;
+  endRound({ title:"Practice complete", perfect:false, shareTitle:"Practice 🔁",
+    summary:"Score: " + R.correct + "/" + R.total,
+    lines:[ left ? (left + " still on your practice list.") : "You cleared your practice list!" ],
+    againText: left ? "Practice again" : "Back to menu", again: left ? startPractice : renderHome });
+}
+function showCard(type, id){
+  const pool = type === "food" ? FOODS : type === "plate" ? PLATES : COMPARES;
+  const c = pool.find(x => x.id === id);
+  if (!c) return false;
+  newRound(type === "compare" ? "compare" : "journey", { level:1, total:1 });
+  round = [c]; idx = 0;
+  show("gameScreen", { theme: type === "compare" ? 4 : 1 });
+  $("subtitle").textContent = "Preview";
+  renderCard();
+  return true;
+}
+
 // Test hook (read-only helpers for headless tests)
-window.__sw = { get save(){ return save; }, FOODS, PLATES, COMPARES, HIDDEN_POOL, buildBudget, rateOf, prateOf };
+window.__sw = { get save(){ return save; }, FOODS, PLATES, COMPARES, HIDDEN_POOL, buildBudget, rateOf, prateOf,
+  buildDailyRound, dstr, showCard, getRound:() => round, getMode:() => R && R.mode, getR:() => R, getIdx:() => idx,
+  PD, persist, DRAFT, startChallenge, startPractice, startJourney, recordMissAnswer, markSeen };
+window.__SW__ = window.__sw;
 if (!save.profile) renderProfileChoice(); else renderHome();
 if ("serviceWorker" in navigator && location.protocol !== "file:"){
   window.addEventListener("load", () => { navigator.serviceWorker.register("sw.js").catch(() => {}); });

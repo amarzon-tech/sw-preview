@@ -199,6 +199,23 @@
   .twoBar div{ display:flex; align-items:center; gap:.5rem; font-size:.8rem; font-weight:800; }
   .twoBar i{ display:block; height:.7rem; border-radius:999px; background:#0ea5e9; width:0; transition:width .7s ease; } .twoBar i.act{ background:#ef4444; }
   @media (prefers-reduced-motion: reduce){ *{ transition:none !important; animation:none !important; } .fx,.confetti{ display:none; } }
+
+  /* Food photos (replay-pics) */
+  .foodPhoto{ width:100%; max-width:18rem; aspect-ratio:4/3; object-fit:cover; border-radius:1rem; background:#e2e8f0; display:block; }
+  .foodPhoto.sm{ width:4.8rem; height:3.6rem; max-width:4.8rem; flex:none; border-radius:.7rem; }
+  .foodPhoto.cmp{ width:100%; max-width:100%; max-height:7.5rem; margin:0 auto .25rem; }
+  .modeRow{ display:grid; grid-template-columns:1fr 1fr; gap:.55rem; }
+  .challengeBtn, .practiceBtn{ border:0; border-radius:1.3rem; padding:.85rem .8rem; text-align:left; font-weight:900; font-size:.98rem; display:flex; gap:.6rem; align-items:center; }
+  .challengeBtn{ background:linear-gradient(135deg,#fbbf24,#fb923c); color:#1c1008; }
+  .practiceBtn{ background:linear-gradient(135deg,#6ee7b7,#34d399); color:#06231a; }
+  .challengeBtn small, .practiceBtn small{ display:block; font-weight:700; font-size:.74rem; }
+  .challengeBtn .me, .practiceBtn .me{ font-size:1.7rem; flex:none; }
+  .practiceBtn:disabled{ opacity:.5; cursor:not-allowed; }
+  @media (max-height:700px){
+    .foodPhoto{ max-width:14rem; max-height:8rem; }
+    .foodPhoto.cmp{ max-height:5.5rem; }
+    .emojiTile{ width:4.5rem; height:4.5rem; font-size:2.4rem; }
+  }
 </style>
 </head>
 <body>
